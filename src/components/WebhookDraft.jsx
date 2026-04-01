@@ -1,88 +1,148 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import WEBHOOK_URL from "../config";
 import "../styles/WebhookDraft.css";
 
+const ACTIONS = [
+  { id: "event_details", label: "Get Event Details" },
+  { id: "hackathon_details", label: "Get Hackathon Details" },
+  { id: "new_courses", label: "New Courses" },
+];
+
+function normalizeCards(payload) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const candidateLists = [payload.items, payload.results, payload.data, payload.cards, payload];
+  const source = candidateLists.find((entry) => Array.isArray(entry));
+
+  if (!source) {
+    return [];
+  }
+
+  return source.slice(0, 10).map((item, index) => ({
+    id: item.id || `${index + 1}`,
+    title: item.title || item.name || "Untitled",
+    subtitle: item.subtitle || item.provider || item.organizer || "",
+    category: item.category || item.type || "",
+    description: item.description || item.summary || "No description provided.",
+    date: item.date || item.startDate || item.deadline || "",
+    location: item.location || item.city || "",
+    mode: item.mode || "",
+    tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : [],
+    link: item.link || item.url || "",
+  }));
+}
+
 export default function WebhookDraft() {
-  const [url, setUrl] = useState("");
-  const [response, setResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState("");
+  const [rawResponse, setRawResponse] = useState(null);
   const [error, setError] = useState("");
 
-  const handleGetDraft = async () => {
+  const cards = useMemo(() => normalizeCards(rawResponse), [rawResponse]);
+
+  const handleActionClick = async (action) => {
     if (!WEBHOOK_URL) {
-      setError("Webhook URL is not set. Please fill in config.js.");
-      return;
-    }
-    if (!url.trim()) {
-      setError("Please enter a website URL.");
+      setError("Webhook URL is not set. Add it in src/config.js.");
       return;
     }
 
-    setLoading(true);
+    setLoadingAction(action.id);
     setError("");
-    setResponse(null);
+    setRawResponse(null);
 
     try {
       const res = await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ websiteUrl: url }),
+        body: JSON.stringify({ action: action.id, actionLabel: action.label }),
       });
 
       const text = await res.text();
       try {
         const json = JSON.parse(text);
-        setResponse(json);
+        setRawResponse(json);
       } catch {
-        setResponse(text);
+        setRawResponse({ message: text || "Request sent successfully." });
       }
-    } catch (err) {
-      setError("Failed to reach the webhook. Check the URL or your network.");
+    } catch {
+      setError("Failed to reach the webhook. Check URL and network.");
     } finally {
-      setLoading(false);
+      setLoadingAction("");
     }
   };
 
   return (
-    <div className="container">
-      <h2 className="title">Draft Generator</h2>
+    <div className="action-shell">
+      <div className="action-card">
+        <h1 className="title">Workflow Trigger Panel</h1>
+        <p className="subtitle">All buttons call the same webhook configured in src/config.js.</p>
 
-      <input
-        type="text"
-        className="url-input"
-        placeholder="Enter website URL..."
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-      />
-
-      <button
-        className="get-draft-btn"
-        onClick={handleGetDraft}
-        disabled={loading}
-      >
-        {loading ? "Fetching..." : "Get Draft"}
-      </button>
-
-      {error && <p className="error-text">{error}</p>}
-
-      {response && (
-        <div className="response-box">
-          {typeof response === "object" ? (
-            Object.entries(response).map(([key, value]) => (
-              <div key={key} className="response-row">
-                <span className="response-key">{key}</span>
-                <span className="response-value">
-                  {typeof value === "object"
-                    ? JSON.stringify(value, null, 2)
-                    : String(value)}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p>{response}</p>
-          )}
+        <div className="button-grid">
+          {ACTIONS.map((action) => (
+            <button
+              key={action.id}
+              className="action-btn"
+              onClick={() => handleActionClick(action)}
+              disabled={Boolean(loadingAction)}
+              type="button"
+            >
+              {loadingAction === action.id ? "Sending..." : action.label}
+            </button>
+          ))}
         </div>
-      )}
+
+        {error && <p className="error-text">{error}</p>}
+
+        {cards.length > 0 && (
+          <div className="results-wrap">
+            <h2 className="results-title">Top {cards.length} Results</h2>
+            <div className="card-grid">
+              {cards.map((card) => (
+                <article className="result-card" key={card.id}>
+                  <p className="card-category">{card.category || "General"}</p>
+                  <h3 className="card-title">{card.title}</h3>
+                  {card.subtitle && <p className="card-subtitle">{card.subtitle}</p>}
+                  <p className="card-description">{card.description}</p>
+
+                  <div className="card-meta">
+                    {card.date && <span>{card.date}</span>}
+                    {card.location && <span>{card.location}</span>}
+                    {card.mode && <span>{card.mode}</span>}
+                  </div>
+
+                  {card.tags.length > 0 && (
+                    <div className="tags-row">
+                      {card.tags.map((tag) => (
+                        <span className="tag" key={`${card.id}-${tag}`}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {card.link && (
+                    <a className="card-link" href={card.link} target="_blank" rel="noreferrer">
+                      View Details
+                    </a>
+                  )}
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {rawResponse && cards.length === 0 && (
+          <div className="response-box">
+            <h2>Webhook Response</h2>
+            {typeof rawResponse === "object" ? (
+              <pre>{JSON.stringify(rawResponse, null, 2)}</pre>
+            ) : (
+              <p>{String(rawResponse)}</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
