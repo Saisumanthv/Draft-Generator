@@ -8,19 +8,53 @@ const ACTIONS = [
   { id: "new_courses", label: "New Courses" },
 ];
 
+function extractItemList(payload) {
+  if (!payload) {
+    return [];
+  }
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (typeof payload !== "object") {
+    return [];
+  }
+
+  const preferredKeys = ["items", "results", "data", "cards", "list", "output"];
+
+  for (const key of preferredKeys) {
+    const value = payload[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value && typeof value === "object") {
+      const nested = extractItemList(value);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+  }
+
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value && typeof value === "object") {
+      const nested = extractItemList(value);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+  }
+
+  return [];
+}
+
 function normalizeCards(payload) {
-  if (!payload || typeof payload !== "object") {
-    return [];
-  }
+  const items = extractItemList(payload);
 
-  const candidateLists = [payload.items, payload.results, payload.data, payload.cards, payload];
-  const source = candidateLists.find((entry) => Array.isArray(entry));
-
-  if (!source) {
-    return [];
-  }
-
-  return source.slice(0, 10).map((item, index) => ({
+  return items.slice(0, 10).map((item, index) => ({
     id: item.id || `${index + 1}`,
     title: item.title || item.name || "Untitled",
     subtitle: item.subtitle || item.provider || item.organizer || "",
