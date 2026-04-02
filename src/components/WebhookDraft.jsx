@@ -89,6 +89,7 @@ export default function WebhookDraft() {
       const res = await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ action: action.id, actionLabel: action.label }),
       });
 
